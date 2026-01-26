@@ -1,4 +1,5 @@
 project,url
+.NET Foundation, https://dotnetfoundation.org/about/code-of-conduct
 Bootstrap, https://github.com/twbs/bootstrap
 Bundler, https://github.com/rubygems/bundler
 Cloud Native Compute Foundation, https://www.cncf.io/
@@ -13,18 +14,17 @@ git, https://github.com/git/git
 GitLab, https://gitlab.com/gitlab-org/gitlab-foss/
 Golang, https://golang.org/conduct
 Google, https://opensource.google/docs/releasing/template/CODE_OF_CONDUCT/
+Hanami, http://hanamirb.org/community/#code-of-conduct
 IBM, https://github.com/IBM/repo-template
 Intel OTC, https://01.org/blogs/2018/intel-covenant-code
 Jenkins, https://www.jenkins.io/conduct/
 JRuby, https://github.com/jruby/jruby/
 JuneteenthConf, https://juneteenthconf.com/
-Hanami, http://hanamirb.org/community/#code-of-conduct
 Kubernetes, https://github.com/kubernetes/kubernetes/
 Linux, https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=8a104f8b5867c682d994ffa7a74093c54469c11f
 Mastodon, https://github.com/mastodon/mastodon
 Metasploit Framework, https://github.com/rapid7/metasploit-framework
 Microsoft, https://opensource.microsoft.com/codeofconduct/
-.NET Foundation, https://dotnetfoundation.org/about/code-of-conduct
 Node.js, https://github.com/nodejs
 rbenv, https://github.com/rbenv/rbenv
 React, https://github.com/facebook/react

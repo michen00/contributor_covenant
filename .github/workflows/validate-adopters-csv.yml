@@ -37,41 +37,62 @@ jobs:
           FEATURED_ADOPTERS_CSV: ${{ env.FEATURED_ADOPTERS_CSV }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
+          echo "::debug::Event name is '$EVENT_NAME'"
+          echo "::debug::ADOPTERS_CSV='$ADOPTERS_CSV'"
+          echo "::debug::FEATURED_ADOPTERS_CSV='$FEATURED_ADOPTERS_CSV'"
+
           # For workflow_dispatch, validate all CSV files
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             json_files="[\"$FEATURED_ADOPTERS_CSV\",\"$ADOPTERS_CSV\"]"
+            echo "::debug::workflow_dispatch - outputting both files"
+            echo "::debug::json_files='$json_files'"
             echo "files=$json_files" >> "$GITHUB_OUTPUT"
+            echo "::debug::Written to GITHUB_OUTPUT: files=$json_files"
             exit 0
           fi
 
           # For PRs and pushes, check what actually changed
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             BASE_REF="${{ github.event.pull_request.base.sha }}"
+            echo "::debug::PR mode - BASE_REF='$BASE_REF'"
           else
             BASE_REF="HEAD~1"
+            echo "::debug::Push mode - BASE_REF='$BASE_REF'"
           fi
 
           changed_files=$(git diff --name-only "$BASE_REF" 2>/dev/null || echo "")
+          echo "::debug::Changed files from git diff:"
+          echo "$changed_files" | while IFS= read -r line; do
+            [[ -n "$line" ]] && echo "::debug::  - $line"
+          done
 
           json_files="["
           first=true
 
           # Check featured-adopters first (since 'adopters' is substring of 'featured-adopters')
           if echo "$changed_files" | grep -qF "$FEATURED_ADOPTERS_CSV"; then
+            echo "::debug::Found $FEATURED_ADOPTERS_CSV in changed files"
             json_files="${json_files}\"$FEATURED_ADOPTERS_CSV\""
             first=false
+          else
+            echo "::debug::$FEATURED_ADOPTERS_CSV NOT found in changed files"
           fi
 
           if echo "$changed_files" | grep -qF "$ADOPTERS_CSV"; then
+            echo "::debug::Found $ADOPTERS_CSV in changed files"
             if [[ $first == false ]]; then
               json_files="${json_files},"
             fi
             json_files="${json_files}\"$ADOPTERS_CSV\""
             first=false
+          else
+            echo "::debug::$ADOPTERS_CSV NOT found in changed files"
           fi
 
           json_files="${json_files}]"
+          echo "::debug::Final json_files='$json_files'"
           echo "files=$json_files" >> "$GITHUB_OUTPUT"
+          echo "::debug::Written to GITHUB_OUTPUT: files=$json_files"
   validate:
     strategy:
       matrix:
@@ -95,6 +116,17 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
+          echo "::debug::Preflight outputs.files='${{ needs.preflight.outputs.files }}'"
+          echo "::debug::Matrix file='${{ matrix.file }}'"
+          echo "::debug::Event name='$EVENT_NAME'"
+
+          # Check if file exists
+          if [[ -f "$FILE" ]]; then
+            echo "::debug::File '$FILE' exists"
+          else
+            echo "::error::File '$FILE' does NOT exist"
+          fi
+
           tail -n +2 "$FILE" | sort -t, -k1,1 > /tmp/sorted.csv
           tail -n +2 "$FILE" > /tmp/original.csv
 

@@ -35,10 +35,23 @@ jobs:
         env:
           ADOPTERS_CSV: ${{ env.ADOPTERS_CSV }}
           FEATURED_ADOPTERS_CSV: ${{ env.FEATURED_ADOPTERS_CSV }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          changed_files=$(git diff --name-only origin/release 2>/dev/null \
-            || git diff --name-only HEAD~1 2>/dev/null \
-            || echo "")
+          # For workflow_dispatch, validate all CSV files
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            json_files="[\"$FEATURED_ADOPTERS_CSV\",\"$ADOPTERS_CSV\"]"
+            echo "files=$json_files" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # For PRs and pushes, check what actually changed
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            BASE_REF="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_REF="HEAD~1"
+          fi
+
+          changed_files=$(git diff --name-only "$BASE_REF" 2>/dev/null || echo "")
 
           json_files="["
           first=true
@@ -91,6 +104,29 @@ jobs:
             exit 0
           fi
 
+          # For workflow_dispatch: fail immediately, skip base comparison
+          if [[ $EVENT_NAME == workflow_dispatch ]]; then
+            echo "::error file=${FILE}::File must be sorted alphabetically"
+            echo "errors=1" >> "$GITHUB_OUTPUT"
+            line_count=$(wc -l < "$FILE" | tr -d ' ')
+            echo "start_line=2" >> "$GITHUB_OUTPUT"
+            echo "end_line=${line_count}" >> "$GITHUB_OUTPUT"
+
+            # Ensure sorted file ends with exactly one newline
+            if [[ -s /tmp/sorted.csv ]]; then
+              content=$(cat /tmp/sorted.csv)
+              while [[ "${content: -1}" == $'\n' ]]; do
+                content="${content%$'\n'}"
+              done
+              printf '%s\n' "$content" > /tmp/sorted.csv
+            fi
+
+            sorted=$(jq -Rs . < /tmp/sorted.csv)
+            echo "sorted=${sorted}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # For PRs: check if base version had the same error
           if [[ $EVENT_NAME == pull_request ]]; then
             base_sorted=true
             if git cat-file -e "${BASE_SHA}:${FILE}" 2>/dev/null; then
@@ -110,6 +146,7 @@ jobs:
             fi
           fi
 
+          # For pushes and PRs with new errors: report error
           echo "::error file=${FILE}::File must be sorted alphabetically"
           echo "errors=1" >> "$GITHUB_OUTPUT"
           line_count=$(wc -l < "$FILE" | tr -d ' ')
@@ -117,14 +154,11 @@ jobs:
           echo "end_line=${line_count}" >> "$GITHUB_OUTPUT"
 
           # Ensure sorted file ends with exactly one newline
-          # Read content, strip trailing newlines, then add exactly one
           if [[ -s /tmp/sorted.csv ]]; then
             content=$(cat /tmp/sorted.csv)
-            # Strip all trailing newlines using parameter expansion
             while [[ "${content: -1}" == $'\n' ]]; do
               content="${content%$'\n'}"
             done
-            # Write back with exactly one trailing newline
             printf '%s\n' "$content" > /tmp/sorted.csv
           fi
 

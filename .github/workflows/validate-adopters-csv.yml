@@ -12,6 +12,7 @@ on:
     paths:
       - assets/adopters.csv
       - assets/featured-adopters.csv
+  workflow_dispatch:
 
 permissions:
   contents: read

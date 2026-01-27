@@ -59,14 +59,14 @@ jobs:
           json_files="${json_files}]"
           echo "files=$json_files" >> "$GITHUB_OUTPUT"
   validate:
-    name: Validate ${{ matrix.file }}
-    needs: preflight
-    if: needs.preflight.outputs.files != '[]'
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         file: ${{ fromJSON(needs.preflight.outputs.files) }}
       fail-fast: false
+    name: Validate ${{ matrix.file }}
+    needs: preflight
+    if: needs.preflight.outputs.files != '[]'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 

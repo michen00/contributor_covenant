@@ -3,12 +3,12 @@ name: Validate adopters CSV files
 
 on:
   pull_request:
-    branches: [release]
+    branches: [ci/test-ci]
     paths:
       - assets/adopters.csv
       - assets/featured-adopters.csv
   push:
-    branches: [release]
+    branches: [ci/test-ci]
     paths:
       - assets/adopters.csv
       - assets/featured-adopters.csv

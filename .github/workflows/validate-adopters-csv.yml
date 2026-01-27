@@ -1,0 +1,178 @@
+---
+name: Validate adopters CSV files
+
+on:
+  pull_request:
+    branches: [release]
+    paths:
+      - assets/adopters.csv
+      - assets/featured-adopters.csv
+  push:
+    branches: [release]
+    paths:
+      - assets/adopters.csv
+      - assets/featured-adopters.csv
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  ADOPTERS_CSV: assets/adopters.csv
+  FEATURED_ADOPTERS_CSV: assets/featured-adopters.csv
+
+jobs:
+  preflight:
+    name: Check changed files
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.check.outputs.files }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check changed files
+        id: check
+        env:
+          ADOPTERS_CSV: ${{ env.ADOPTERS_CSV }}
+          FEATURED_ADOPTERS_CSV: ${{ env.FEATURED_ADOPTERS_CSV }}
+        run: |
+          changed_files=$(git diff --name-only origin/release 2>/dev/null \
+            || git diff --name-only HEAD~1 2>/dev/null \
+            || echo "")
+
+          json_files="["
+          first=true
+
+          # Check featured-adopters first (since 'adopters' is substring of 'featured-adopters')
+          if echo "$changed_files" | grep -qF "$FEATURED_ADOPTERS_CSV"; then
+            json_files="${json_files}\"$FEATURED_ADOPTERS_CSV\""
+            first=false
+          fi
+
+          if echo "$changed_files" | grep -qF "$ADOPTERS_CSV"; then
+            if [[ $first == false ]]; then
+              json_files="${json_files},"
+            fi
+            json_files="${json_files}\"$ADOPTERS_CSV\""
+            first=false
+          fi
+
+          json_files="${json_files}]"
+          echo "files=$json_files" >> "$GITHUB_OUTPUT"
+  validate:
+    name: Validate ${{ matrix.file }}
+    needs: preflight
+    if: needs.preflight.outputs.files != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        file: ${{ fromJSON(needs.preflight.outputs.files) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch full history
+        if: github.event_name == 'pull_request'
+        run: git fetch --unshallow
+
+      - name: Validate sorting
+        id: sort
+        env:
+          FILE: ${{ matrix.file }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          tail -n +2 "$FILE" | sort -t, -k1,1 > /tmp/sorted.csv
+          tail -n +2 "$FILE" > /tmp/original.csv
+
+          if diff -q /tmp/original.csv /tmp/sorted.csv > /dev/null 2>&1; then
+            echo "::notice file=${FILE}::Sort check passed"
+            echo "errors=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ $EVENT_NAME == pull_request ]]; then
+            base_sorted=true
+            if git cat-file -e "${BASE_SHA}:${FILE}" 2>/dev/null; then
+              git show "${BASE_SHA}:${FILE}" > /tmp/base.csv
+              tail -n +2 /tmp/base.csv | sort -t, -k1,1 > /tmp/base_sorted.csv
+              tail -n +2 /tmp/base.csv > /tmp/base_original.csv
+              if ! diff -q /tmp/base_original.csv /tmp/base_sorted.csv > /dev/null 2>&1
+              then
+                base_sorted=false
+              fi
+            fi
+
+            if [[ $base_sorted == false ]]; then
+              echo "::notice file=${FILE}::Pre-existing sort error (not blocking)"
+              echo "errors=0" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          echo "::error file=${FILE}::File must be sorted alphabetically"
+          echo "errors=1" >> "$GITHUB_OUTPUT"
+          line_count=$(wc -l < "$FILE" | tr -d ' ')
+          echo "start_line=2" >> "$GITHUB_OUTPUT"
+          echo "end_line=${line_count}" >> "$GITHUB_OUTPUT"
+
+          # Ensure sorted file ends with exactly one newline
+          # Read content, strip trailing newlines, then add exactly one
+          if [[ -s /tmp/sorted.csv ]]; then
+            content=$(cat /tmp/sorted.csv)
+            # Strip all trailing newlines using parameter expansion
+            while [[ "${content: -1}" == $'\n' ]]; do
+              content="${content%$'\n'}"
+            done
+            # Write back with exactly one trailing newline
+            printf '%s\n' "$content" > /tmp/sorted.csv
+          fi
+
+          sorted=$(jq -Rs . < /tmp/sorted.csv)
+          echo "sorted=${sorted}" >> "$GITHUB_OUTPUT"
+
+      - name: Post-sort suggestion
+        if: github.event_name == 'pull_request' && steps.sort.outputs.errors > 0
+        uses: actions/github-script@v8
+        env:
+          FILE: ${{ matrix.file }}
+          START_LINE: ${{ steps.sort.outputs.start_line }}
+          END_LINE: ${{ steps.sort.outputs.end_line }}
+          SORTED: ${{ steps.sort.outputs.sorted }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const sorted = JSON.parse(process.env.SORTED);
+            const body = [
+              '**Sorting error**\n',
+              'File must be sorted alphabetically (case-sensitive, ASCII order).\n',
+              '```suggestion',
+              sorted,
+              '```'
+            ].join('\n');
+            try {
+              await github.rest.pulls.createReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+                commit_id: process.env.HEAD_SHA,
+                event: 'COMMENT',
+                comments: [{
+                  path: process.env.FILE,
+                  start_line: parseInt(process.env.START_LINE),
+                  line: parseInt(process.env.END_LINE),
+                  body
+                }]
+              });
+            } catch (e) {
+              console.error('Failed to post review:', e.message);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## ${process.env.FILE} - Sorting Error\n\nFile must be sorted.`
+              });
+            }
+
+      - name: Fail if sort errors were found
+        if: steps.sort.outputs.errors > 0
+        run: exit 1
